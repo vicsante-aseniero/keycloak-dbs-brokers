@@ -147,11 +147,8 @@ services:
     environment:
       - ACTIVATE_PRO=0 # Ensure Community version is used
       - SERVICES=all # Set SERVICES to 'all' to activate all free services (S3, SQS, Lambda, DynamoDB, SNS, EC2, etc.)
-      - HOSTNAME_EXTERNAL=localstack # Use this hostname to connect from the host
-      - HOST_TMP_FOLDER=/tmp/localstack # Use a temp folder for better performance  
+      - LOCALSTACK_HOST=localstack # Use this hostname to connect from the host
       - DOCKER_HOST=unix:///var/run/docker.sock # Required for certain LocalStack features
-      - DEFAULT_REGION=us-east-1
-      - DATA_DIR=/var/lib/localstack
       - DEBUG=1 # Enable debug logs for troubleshooting
     ports:
       - "4566:4566" # Expose port for the host
