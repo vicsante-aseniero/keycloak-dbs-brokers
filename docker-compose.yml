@@ -140,6 +140,44 @@ services:
     # Add "forwardPorts": ["5672", "15672"] to **devcontainer.json** to forward RabbitMQ locally.
     # (Adding the "ports" property to this file will not forward from a Codespace.)
 
+  localstack:
+    container_name: localstack_main  # Give it a static name
+    image: localstack/localstack:latest
+    user: "root"    
+    environment:
+      # Set ACTIVATE_PRO to 0 here to ensure Community mode is used
+      - ACTIVATE_PRO=0 # Ensure Community version is used
+      - SERVICES=s3,sqs,lambda # Specify only the services you need to reduce resource usage and startup time
+      - LAMBDA_EXECUTOR=docker-reuse # Use docker-reuse to avoid starting a new container for each invocation
+      - LAMBDA_REMOTE_DOCKER=false # Set to true if using Docker-in-Docker
+      - HOST_TMP_FOLDER=/tmp/localstack # Use a temp folder for better performance  
+      - DOCKER_HOST=unix:///var/run/docker.sock # Required for certain LocalStack features
+      - DEFAULT_REGION=us-east-1
+      - DATA_DIR=/var/lib/localstack
+      - DEBUG=1 # Enable debug logs for troubleshooting
+    ports:
+      - "4566:4566"                  # Expose port for the host
+    networks:
+      - backend_network              # Define a network for the Dev Container to join
+    restart: unless-stopped
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - "./localstack-data:/var/lib/localstack" # For persistence
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    # Add "forwardPorts": ["4566"] to **devcontainer.json** to forward LocalStack locally.
+    # (Adding the "ports" property to this file will not forward from a Codespace
+    # Note: LocalStack can be resource-intensive; adjust your Codespace resources if needed.
+    # See
+    # more details at
+    # https://github.com/localstack/localstack-docker/blob/master/README.md
+    # and https://aka.ms/vscode-dev-containers/localstack.
+    #)
+
 networks:
   frontend_network:
     driver: bridge # Or overlay, etc.
