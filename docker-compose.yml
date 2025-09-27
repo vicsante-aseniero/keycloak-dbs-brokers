@@ -3,8 +3,7 @@ version: '3.9'
 services:
   mongodb:
     container_name: mongodb-dev    
-    # Use the latest MongoDB image. For more info, see https://aka.ms/dev-containers-mongodb.
-    image: mongo:latest
+    image: mongo:latest # Use the latest MongoDB image. For more info, see https://aka.ms/dev-containers-mongodb.
     user: "root"
     environment:
       MONGO_INITDB_ROOT_USERNAME: devuser
@@ -19,6 +18,7 @@ services:
 
     # Add "forwardPorts": ["27017"] to **devcontainer.json** to forward MongoDB locally.
     # (Adding the "ports" property to this file will not forward from a Codespace.)
+
   sqlserver:
     container_name: sqlserver-dev
     image: mcr.microsoft.com/mssql/server:2022-latest
@@ -37,13 +37,13 @@ services:
   
     # Add "forwardPorts": ["db:1433"] to **devcontainer.json** to forward MSSQL locally.
     # (Adding the "ports" property to this file will not forward from a Codespace.)
+
   postgres:
     container_name: postgres-dev
     image: postgres:latest
     user: "root"
-    env_file:
-      # Ensure that the variables in .env match the same variables in devcontainer.json
-      - .env
+    env_file:      
+      - .env # Ensure that the variables in .env match the same variables in devcontainer.json
     ports:
       - "5432:5432" # Optional: Expose PostgreSQL port if you need to access it directly    
     networks:
@@ -145,20 +145,18 @@ services:
     image: localstack/localstack:latest
     user: "root"    
     environment:
-      # Set ACTIVATE_PRO to 0 here to ensure Community mode is used
       - ACTIVATE_PRO=0 # Ensure Community version is used
-      - SERVICES=s3,sqs,lambda # Specify only the services you need to reduce resource usage and startup time
-      - LAMBDA_EXECUTOR=docker-reuse # Use docker-reuse to avoid starting a new container for each invocation
-      - LAMBDA_REMOTE_DOCKER=false # Set to true if using Docker-in-Docker
+      - SERVICES=all # Set SERVICES to 'all' to activate all free services (S3, SQS, Lambda, DynamoDB, SNS, EC2, etc.)
+      - HOSTNAME_EXTERNAL=localstack # Use this hostname to connect from the host
       - HOST_TMP_FOLDER=/tmp/localstack # Use a temp folder for better performance  
       - DOCKER_HOST=unix:///var/run/docker.sock # Required for certain LocalStack features
       - DEFAULT_REGION=us-east-1
       - DATA_DIR=/var/lib/localstack
       - DEBUG=1 # Enable debug logs for troubleshooting
     ports:
-      - "4566:4566"                  # Expose port for the host
+      - "4566:4566" # Expose port for the host
     networks:
-      - backend_network              # Define a network for the Dev Container to join
+      - backend_network # Define a network for the Dev Container to join
     restart: unless-stopped
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock"
