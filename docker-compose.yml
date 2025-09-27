@@ -1,5 +1,4 @@
 version: '3.9'
-
 services:
   mongodb:
     container_name: mongodb-dev    
@@ -146,7 +145,8 @@ services:
     user: "root"    
     environment:
       - ACTIVATE_PRO=0 # Ensure Community version is used
-      - SERVICES=all # Set SERVICES to 'all' to activate all free services (S3, SQS, Lambda, DynamoDB, SNS, EC2, etc.)
+      - SERVICES=all # Start all services (default). Modify as needed.
+      #- SERVICES=apigateway,s3,sqs,sns,stepfunctions,events,ec2,lambda,kms,iam,acm,transcribe,dynamodb,cloudformation,logs,cloudwatch,ssm,ses,kinesis,route53,opensearch # Set SERVICES to activate free services (S3, SQS, Lambda, DynamoDB, SNS, EC2, etc.)
       - LOCALSTACK_HOST=localstack # Use this hostname to connect from the host
       - DOCKER_HOST=unix:///var/run/docker.sock # Required for certain LocalStack features
       - DEBUG=1 # Enable debug logs for troubleshooting
@@ -159,7 +159,7 @@ services:
       - "/var/run/docker.sock:/var/run/docker.sock"
       - "./localstack-data:/var/lib/localstack" # For persistence
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4566/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
       interval: 10s
       timeout: 5s
       retries: 5
