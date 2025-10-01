@@ -75,13 +75,13 @@ services:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: jajnav5@
       # Hostname settings
-      KC_HOSTNAME: localhost
-      KC_HOSTNAME_PORT: 9000
+      KC_HOSTNAME: http://localhost:9000      
       KC_HTTP_ENABLED: "true" # Enable HTTP for local development, use HTTPS in production
       # Production mode (recommended)
-      KC_FEATURES: web-authn,token-exchange,client-policies,admin-fine-grained-authz,declarative-ui,scripts,docker
+      KC_FEATURES: web-authn,token-exchange,client-policies,admin-fine-grained-authz,scripts,docker
       KC_HEALTH_ENABLED: "true" # Enable health endpoints
       KC_METRICS_ENABLED: "true" # Enable metrics endpoints
+      KC_PROXY: none # Tells Keycloak how to trust proxy headers.
     ports:
       - "9000:8080"
     networks:
@@ -138,7 +138,6 @@ services:
 
     # Add "forwardPorts": ["5672", "15672"] to **devcontainer.json** to forward RabbitMQ locally.
     # (Adding the "ports" property to this file will not forward from a Codespace.)
-
   localstack:
     container_name: localstack_main  # Give it a static name
     image: localstack/localstack:latest
