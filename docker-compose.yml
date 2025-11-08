@@ -37,6 +37,31 @@ services:
     # Add "forwardPorts": ["db:1433"] to **devcontainer.json** to forward MSSQL locally.
     # (Adding the "ports" property to this file will not forward from a Codespace.)
 
+  mariadb:
+    container_name: mariadb-dev    
+    image: mariadb:10.11 # Use the official MariaDB image
+    user: "root"    
+    environment: # Define environment variables for the database configuration
+      MARIADB_ROOT_PASSWORD: jajnav5@ # **IMPORTANT**: Change this to a secure password      
+      MARIADB_DATABASE: devDb # Optional: Name of the initial database to create      
+      MARIADB_USER: devuser # Optional: Username for the initial database user      
+      MARIADB_PASSWORD: JajNav5@2119 # Optional: Password for the initial database user
+    ports:
+      - "3306:3306" # Map the container port 3306 to the host machine's port 3306
+    networks:
+      - backend_network    
+    restart: unless-stopped # Restart the container if it stops, unless manually stopped    
+    volumes:
+      - mariadb_data:/var/lib/mysql # Use a named volume to persist the data
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    # Add "forwardPorts": ["db:3306"] to **devcontainer.json** to forward MariaDB locally.
+    # (Adding the "ports" property to this file will not forward from a Codespace.)
+
   postgres:
     container_name: postgres-dev
     image: postgres:latest
@@ -138,14 +163,14 @@ services:
 
     # Add "forwardPorts": ["5672", "15672"] to **devcontainer.json** to forward RabbitMQ locally.
     # (Adding the "ports" property to this file will not forward from a Codespace.)
+
   localstack:
     container_name: localstack_main  # Give it a static name
     image: localstack/localstack:latest
     user: "root"    
     environment:
       - ACTIVATE_PRO=0 # Ensure Community version is used
-      - SERVICES=all # Start all services (default). Modify as needed.
-      #- SERVICES=apigateway,s3,sqs,sns,stepfunctions,events,ec2,lambda,kms,iam,acm,transcribe,dynamodb,cloudformation,logs,cloudwatch,ssm,ses,kinesis,route53,opensearch # Set SERVICES to activate free services (S3, SQS, Lambda, DynamoDB, SNS, EC2, etc.)
+      - SERVICES=apigateway,s3,sqs,sns,stepfunctions,events,ec2,lambda,kms,iam,acm,transcribe,dynamodb,cloudformation,logs,cloudwatch,ssm,ses,kinesis,route53,opensearch # Set SERVICES to activate free services (S3, SQS, Lambda, DynamoDB, SNS, EC2, etc.)
       - LOCALSTACK_HOST=localstack # Use this hostname to connect from the host
       - DOCKER_HOST=unix:///var/run/docker.sock # Required for certain LocalStack features
       - DEBUG=1 # Enable debug logs for troubleshooting
@@ -182,6 +207,7 @@ volumes:
   keycloak_data:
   mongo_data:
   mssql_data:
+  mariadb_data:
   postgres_data:
   redis_data:
   rabbitmq_data:
