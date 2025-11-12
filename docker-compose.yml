@@ -17,7 +17,6 @@ services:
 
     # Add "forwardPorts": ["27017"] to **devcontainer.json** to forward MongoDB locally.
     # (Adding the "ports" property to this file will not forward from a Codespace.)
-
   sqlserver:
     container_name: sqlserver-dev
     image: mcr.microsoft.com/mssql/server:2022-latest
@@ -36,7 +35,6 @@ services:
   
     # Add "forwardPorts": ["db:1433"] to **devcontainer.json** to forward MSSQL locally.
     # (Adding the "ports" property to this file will not forward from a Codespace.)
-
   mariadb:
     container_name: mariadb-dev    
     image: mariadb:10.11 # Use the official MariaDB image
@@ -61,7 +59,6 @@ services:
 
     # Add "forwardPorts": ["db:3306"] to **devcontainer.json** to forward MariaDB locally.
     # (Adding the "ports" property to this file will not forward from a Codespace.)
-
   postgres:
     container_name: postgres-dev
     image: postgres:latest
@@ -126,6 +123,28 @@ services:
       retries: 5
 
     # Add "forwardPorts": ["9000"] to **devcontainer.json** to forward Keycloak locally.
+    # (Adding the "ports" property to this file will not forward from a Codespace.)
+
+  phpmyadmin:
+    container_name: phpmyadmin_web
+    image: phpmyadmin/phpmyadmin:latest    
+    user: "root"
+    restart: unless-stopped      
+    environment:
+      # Tell phpMyAdmin the hostname of the database server
+      # The container name 'mariadb' works as the hostname because Docker Compose puts them on the same network
+      PMA_HOST: mariadb      
+      PMA_PORT: 3306 # Set the connection port (default is 3306, but you can be explicit)
+      # Optional: Allows you to enter any host/port on the login screen
+      # PMA_ARBITRARY: 1 
+    ports:
+      - "9080:80" # Map port 80 (phpMyAdmin default) to port 9080 on your host
+    networks:
+      - backend_network    
+    depends_on:
+      - mariadb # Ensures the phpmyadmin container only starts after the db container is up
+
+    # Add "forwardPorts": ["9080"] to **devcontainer.json** to forward phpMyAdmin locally.
     # (Adding the "ports" property to this file will not forward from a Codespace.)
 
   redis:
