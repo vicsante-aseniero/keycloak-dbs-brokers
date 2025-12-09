@@ -63,8 +63,31 @@ services:
     container_name: postgres-dev
     image: postgres:latest
     user: "root"
-    env_file:      
-      - .env # Ensure that the variables in .env match the same variables in devcontainer.json
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: jajnav5@
+      POSTGRES_DB: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_HOST: localhost
+      POSTGRES_SSLMODE: disable
+      POSTGRES_MAX_CONNECTIONS: 100
+      POSTGRES_MAX_CONNECTIONS_PER_HOST: 10
+      POSTGRES_MAX_CONNECTIONS_PER_USER: 10
+      POSTGRES_MAX_CONNECTIONS_PER_SCHEMA: 10
+      POSTGRES_MAX_CONNECTIONS_PER_TABLE: 10
+      POSTGRES_MAX_CONNECTIONS_PER_VIEW: 10
+      POSTGRES_MAX_CONNECTIONS_PER_SEQUENCE: 10
+      POSTGRES_MAX_CONNECTIONS_PER_INDEX: 10
+      POSTGRES_MAX_CONNECTIONS_PER_FUNCTION: 10
+      POSTGRES_MAX_CONNECTIONS_PER_PROCEDURE: 10
+      POSTGRES_MAX_CONNECTIONS_PER_TRIGGER: 10
+      POSTGRES_MAX_CONNECTIONS_PER_TYPE: 10
+      POSTGRES_MAX_CONNECTIONS_PER_DOMAIN: 10
+      POSTGRES_MAX_CONNECTIONS_PER_CAST: 10
+      POSTGRES_MAX_CONNECTIONS_PER_CONVERSION: 10
+      POSTGRES_MAX_CONNECTIONS_PER_EXTENSION: 10
+      POSTGRES_MAX_CONNECTIONS_PER_LANGUAGE: 10
+      POSTGRES_MAX_CONNECTIONS_PER_ROLE: 10
     ports:
       - "5432:5432" # Optional: Expose PostgreSQL port if you need to access it directly    
     networks:
