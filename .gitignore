@@ -1,2 +1,5 @@
 # Ignore all files in the 'certs' directory
-certs/
+.certs/
+
+# Ignore '.vscode' folder
+.vscode/
