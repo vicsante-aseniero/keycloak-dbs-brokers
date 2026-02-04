@@ -2,7 +2,7 @@ version: '3.9'
 services:
   mongodb:
     container_name: mongodb-dev    
-    image: mongo:latest # Use the latest MongoDB image. For more info, see https://aka.ms/dev-containers-mongodb.
+    image: mongo:latest
     user: "root"
     environment:
       MONGO_INITDB_ROOT_USERNAME: devuser
@@ -14,9 +14,14 @@ services:
     restart: unless-stopped
     volumes:
       - mongo_data:/var/opt/mongodb/data
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          memory: 512M
 
-    # Add "forwardPorts": ["27017"] to **devcontainer.json** to forward MongoDB locally.
-    # (Adding the "ports" property to this file will not forward from a Codespace.)
   sqlserver:
     container_name: sqlserver-dev
     image: mcr.microsoft.com/mssql/server:2022-latest
@@ -24,7 +29,7 @@ services:
     environment:
       SA_PASSWORD: jajnav5@
       ACCEPT_EULA: Y
-      MSSQL_PID: "Developer" # Specifies Developer Edition
+      MSSQL_PID: "Developer"
     ports:
       - "1433:1433"
     networks:
@@ -32,33 +37,41 @@ services:
     restart: unless-stopped
     volumes:
       - mssql_data:/var/opt/mssql/data
-  
-    # Add "forwardPorts": ["db:1433"] to **devcontainer.json** to forward MSSQL locally.
-    # (Adding the "ports" property to this file will not forward from a Codespace.)
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0' # MSSQL needs more processing power
+          memory: 2.5G # Warning: MSSQL often terminates if given less than 2GB
+        reservations:
+          memory: 2G
+
   mariadb:
     container_name: mariadb-dev    
-    image: mariadb:10.11 # Use the official MariaDB image
+    image: mariadb:10.11
     user: "root"    
-    environment: # Define environment variables for the database configuration
-      MARIADB_ROOT_PASSWORD: jajnav5@ # **IMPORTANT**: Change this to a secure password      
-      MARIADB_DATABASE: devDb # Optional: Name of the initial database to create      
-      MARIADB_USER: devuser # Optional: Username for the initial database user      
-      MARIADB_PASSWORD: JajNav5@2119 # Optional: Password for the initial database user
+    environment:
+      MARIADB_ROOT_PASSWORD: jajnav5@
+      MARIADB_DATABASE: devDb
+      MARIADB_USER: devuser
+      MARIADB_PASSWORD: JajNav5@2119
     ports:
-      - "3306:3306" # Map the container port 3306 to the host machine's port 3306
+      - "3306:3306"
     networks:
       - backend_network    
-    restart: unless-stopped # Restart the container if it stops, unless manually stopped    
+    restart: unless-stopped    
     volumes:
-      - mariadb_data:/var/lib/mysql # Use a named volume to persist the data
+      - mariadb_data:/var/lib/mysql
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
 
-    # Add "forwardPorts": ["db:3306"] to **devcontainer.json** to forward MariaDB locally.
-    # (Adding the "ports" property to this file will not forward from a Codespace.)
   postgres:
     container_name: postgres-dev
     image: postgres:latest
@@ -69,27 +82,10 @@ services:
       POSTGRES_DB: postgres
       POSTGRES_PORT: 5432
       POSTGRES_HOST: localhost
-      POSTGRES_SSLMODE: disable
-      POSTGRES_MAX_CONNECTIONS: 100
-      POSTGRES_MAX_CONNECTIONS_PER_HOST: 10
-      POSTGRES_MAX_CONNECTIONS_PER_USER: 10
-      POSTGRES_MAX_CONNECTIONS_PER_SCHEMA: 10
-      POSTGRES_MAX_CONNECTIONS_PER_TABLE: 10
-      POSTGRES_MAX_CONNECTIONS_PER_VIEW: 10
-      POSTGRES_MAX_CONNECTIONS_PER_SEQUENCE: 10
-      POSTGRES_MAX_CONNECTIONS_PER_INDEX: 10
-      POSTGRES_MAX_CONNECTIONS_PER_FUNCTION: 10
-      POSTGRES_MAX_CONNECTIONS_PER_PROCEDURE: 10
-      POSTGRES_MAX_CONNECTIONS_PER_TRIGGER: 10
-      POSTGRES_MAX_CONNECTIONS_PER_TYPE: 10
-      POSTGRES_MAX_CONNECTIONS_PER_DOMAIN: 10
-      POSTGRES_MAX_CONNECTIONS_PER_CAST: 10
-      POSTGRES_MAX_CONNECTIONS_PER_CONVERSION: 10
-      POSTGRES_MAX_CONNECTIONS_PER_EXTENSION: 10
-      POSTGRES_MAX_CONNECTIONS_PER_LANGUAGE: 10
-      POSTGRES_MAX_CONNECTIONS_PER_ROLE: 10
+      POSTGRES_SSLMODE: disable      
+      POSTGRES_MAX_CONNECTIONS: 50 # Reduced connection limits to save memory overhead
     ports:
-      - "5432:5432" # Optional: Expose PostgreSQL port if you need to access it directly    
+      - "5432:5432"
     networks:
       - backend_network
     restart: unless-stopped
@@ -110,36 +106,35 @@ services:
       -c ssl_key_file=/var/lib/postgresql/server.key
       "
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U keycloak_user -d keycloak"]
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
       timeout: 5s
       retries: 5
-
-    # Add "forwardPorts": ["5432"] to **devcontainer.json** to forward PostgreSQL locally.
-    # (Adding the "ports" property to this file will not forward from a Codespace.)
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 768M
 
   keycloak:
     container_name: keycloak-dev
     image: quay.io/keycloak/keycloak:latest
     user: "root"
     environment:
-      # Database connection settings
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
       KC_DB_USERNAME: keycloak_user
       KC_DB_PASSWORD: jajnav5@
       KC_DB_SCHEMA: public
-      # Keycloak admin user
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: jajnav5@
-      # Hostname settings
       KC_HOSTNAME: http://localhost:9000      
-      KC_HTTP_ENABLED: "true" # Enable HTTP for local development, use HTTPS in production
-      # Production mode (recommended)
+      KC_HTTP_ENABLED: "true"
       KC_FEATURES: web-authn,token-exchange,client-policies,admin-fine-grained-authz,scripts,docker
-      KC_HEALTH_ENABLED: "true" # Enable health endpoints
-      KC_METRICS_ENABLED: "true" # Enable metrics endpoints
-      KC_PROXY: none # Tells Keycloak how to trust proxy headers.
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "true"
+      KC_PROXY: none      
+      JAVA_OPTS: "-Xms512m -Xmx768m -XX:MetaspaceSize=96M -XX:MaxMetaspaceSize=256m" # Java Memory options are crucial here
     ports:
       - "9000:8080"
     networks:
@@ -149,17 +144,19 @@ services:
       - keycloak_data:/var/opt/keycloak/data
     depends_on:
       postgres:
-        condition: service_healthy # Ensure PostgreSQL is healthy before starting Keycloak
+        condition: service_healthy
     command:
-      - start-dev # Use 'start' for production, 'start-dev' for development
+      - start-dev
     healthcheck:
       test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 && grep -q '200 OK' <&3"]
       interval: 10s
       timeout: 5s
       retries: 5
-
-    # Add "forwardPorts": ["9000"] to **devcontainer.json** to forward Keycloak locally.
-    # (Adding the "ports" property to this file will not forward from a Codespace.)
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1G
 
   phpmyadmin:
     container_name: phpmyadmin_web
@@ -167,21 +164,19 @@ services:
     user: "root"
     restart: unless-stopped      
     environment:
-      # Tell phpMyAdmin the hostname of the database server
-      # The container name 'mariadb' works as the hostname because Docker Compose puts them on the same network
       PMA_HOST: mariadb      
-      PMA_PORT: 3306 # Set the connection port (default is 3306, but you can be explicit)
-      # Optional: Allows you to enter any host/port on the login screen
-      # PMA_ARBITRARY: 1 
+      PMA_PORT: 3306
     ports:
-      - "9080:80" # Map port 80 (phpMyAdmin default) to port 9080 on your host
+      - "9080:80"
     networks:
       - backend_network    
     depends_on:
-      - mariadb # Ensures the phpmyadmin container only starts after the db container is up
-
-    # Add "forwardPorts": ["9080"] to **devcontainer.json** to forward phpMyAdmin locally.
-    # (Adding the "ports" property to this file will not forward from a Codespace.)
+      - mariadb
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
 
   redis:
     container_name: redis-dev
@@ -196,9 +191,11 @@ services:
     restart: unless-stopped
     volumes:
       - redis_data:/var/opt/redis/data
-
-    # Add "forwardPorts": ["6379"] to **devcontainer.json** to forward Redis locally.
-    # (Adding the "ports" property to this file will not forward from a Codespace.)
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
 
   rabbitmq:
     container_name: rabbitmq-dev
@@ -208,53 +205,51 @@ services:
       RABBITMQ_DEFAULT_USER: admin
       RABBITMQ_DEFAULT_PASS: jajnav5@
     ports:
-      - "5672:5672"   # RabbitMQ message broker
-      - "15672:15672" # RabbitMQ management UI
+      - "5672:5672"
+      - "15672:15672"
     networks:
       - backend_network
     restart: unless-stopped
     volumes:
       - rabbitmq_data:/var/opt/rabbitmq/data
-
-    # Add "forwardPorts": ["5672", "15672"] to **devcontainer.json** to forward RabbitMQ locally.
-    # (Adding the "ports" property to this file will not forward from a Codespace.)
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
 
   localstack:
-    container_name: localstack_main  # Give it a static name
+    container_name: localstack_main
     image: localstack/localstack:latest
     user: "root"    
     environment:
-      - ACTIVATE_PRO=0 # Ensure Community version is used
-      - SERVICES=apigateway,s3,sqs,sns,stepfunctions,events,ec2,lambda,kms,iam,acm,transcribe,dynamodb,cloudformation,logs,cloudwatch,ssm,ses,kinesis,route53,opensearch # Set SERVICES to activate free services (S3, SQS, Lambda, DynamoDB, SNS, EC2, etc.)
-      - LOCALSTACK_HOST=localstack # Use this hostname to connect from the host
-      - DOCKER_HOST=unix:///var/run/docker.sock # Required for certain LocalStack features
-      - DEBUG=1 # Enable debug logs for troubleshooting
+      - ACTIVATE_PRO=0
+      - SERVICES=apigateway,s3,sqs,sns,stepfunctions,events,ec2,lambda,kms,iam,acm,transcribe,dynamodb,cloudformation,logs,cloudwatch,ssm,ses,kinesis,route53,opensearch
+      - LOCALSTACK_HOST=localstack
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - DEBUG=1
     ports:
-      - "4566:4566" # Expose port for the host
+      - "4566:4566"
     networks:
-      - backend_network # Define a network for the Dev Container to join
+      - backend_network
     restart: unless-stopped
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock"
-      - "./localstack-data:/var/lib/localstack" # For persistence
+      - "./localstack-data:/var/lib/localstack"
     healthcheck:
       test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/4566 && echo -e 'GET /_localstack/health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 && grep -q '200 OK' <&3"]
       interval: 10s
       timeout: 5s
       retries: 5
-
-    # Add "forwardPorts": ["4566"] to **devcontainer.json** to forward LocalStack locally.
-    # (Adding the "ports" property to this file will not forward from a Codespace
-    # Note: LocalStack can be resource-intensive; adjust your Codespace resources if needed.
-    # See
-    # more details at
-    # https://github.com/localstack/localstack-docker/blob/master/README.md
-    # and https://aka.ms/vscode-dev-containers/localstack.
-    #)
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
 
 networks:
   frontend_network:
-    driver: bridge # Or overlay, etc.
+    driver: bridge
   backend_network:
     driver: bridge
 
