@@ -3,6 +3,3 @@ certs/
 
 # Ignore '.vscode' folder
 .vscode/
-
-# Ignore 'localstack-data' folder
-localstack-data/
