@@ -1,3 +1,4 @@
+version: '3.9'
 services:
   mongodb:
     container_name: mongodb-dev    
@@ -81,8 +82,8 @@ services:
       POSTGRES_DB: postgres
       POSTGRES_PORT: 5432
       POSTGRES_HOST: localhost
-      POSTGRES_SSLMODE: disable      
-      POSTGRES_MAX_CONNECTIONS: 50 # Reduced connection limits to save memory overhead
+      POSTGRES_SSLMODE: disable
+      POSTGRES_MAX_CONNECTIONS: 50 
     ports:
       - "5432:5432"
     networks:
@@ -132,8 +133,8 @@ services:
       KC_FEATURES: web-authn,token-exchange,client-policies,admin-fine-grained-authz,scripts,docker
       KC_HEALTH_ENABLED: "true"
       KC_METRICS_ENABLED: "true"
-      KC_PROXY: none      
-      JAVA_OPTS: "-Xms512m -Xmx768m -XX:MetaspaceSize=96M -XX:MaxMetaspaceSize=256m" # Java Memory options are crucial here
+      KC_PROXY: none
+      JAVA_OPTS: "-Xms512m -Xmx768m -XX:MetaspaceSize=96M -XX:MaxMetaspaceSize=256m"
     ports:
       - "9000:8080"
     networks:
@@ -193,8 +194,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.5'
-          memory: 256M
+          cpus: '1.0'
+          memory: 512M
 
   rabbitmq:
     container_name: rabbitmq-dev
@@ -211,6 +212,20 @@ services:
     restart: unless-stopped
     volumes:
       - rabbitmq_data:/var/opt/rabbitmq/data
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  zipkin:
+    container_name: zipkin-dev
+    image: openzipkin/zipkin:latest
+    ports:
+      - "9411:9411"
+    networks:
+      - backend_network
+    restart: unless-stopped
     deploy:
       resources:
         limits:
