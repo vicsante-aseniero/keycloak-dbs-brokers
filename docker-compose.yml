@@ -1,19 +1,33 @@
-version: '3.9'
+# docker-compose.yml
+# Development stack: databases, auth, messaging, tracing, AWS simulation
+# Prerequisites:
+#   1. Create a .env file from .env.example
+#   2. Run ./generate-certs.sh before first start
+#   3. Ensure ./init/init.sql exists
+
 services:
+
+  # ── MongoDB ─────────────────────────────────────────────────────────────────
   mongodb:
-    container_name: mongodb-dev    
+    container_name: mongodb-dev
     image: mongo:latest
-    user: "root"
+    # mongo image uses UID 999 internally; running as non-root is safer
+    user: "999:999"
     environment:
-      MONGO_INITDB_ROOT_USERNAME: devuser
-      MONGO_INITDB_ROOT_PASSWORD: jajnav5@
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
     networks:
       - backend_network
     ports:
       - "27017:27017"
     restart: unless-stopped
     volumes:
-      - mongo_data:/var/opt/mongodb/data
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     deploy:
       resources:
         limits:
@@ -22,13 +36,15 @@ services:
         reservations:
           memory: 512M
 
+  # ── SQL Server ───────────────────────────────────────────────────────────────
   sqlserver:
     container_name: sqlserver-dev
     image: mcr.microsoft.com/mssql/server:2022-latest
+    # MSSQL requires root or its own internal user; leave as-is for dev
     user: "root"
     environment:
-      SA_PASSWORD: jajnav5@
-      ACCEPT_EULA: Y
+      SA_PASSWORD: ${MSSQL_SA_PASSWORD}
+      ACCEPT_EULA: "Y"
       MSSQL_PID: "Developer"
     ports:
       - "1433:1433"
@@ -37,32 +53,39 @@ services:
     restart: unless-stopped
     volumes:
       - mssql_data:/var/opt/mssql/data
+    healthcheck:
+      # /opt/mssql-tools18/bin ships in newer images; -No disables SSL cert check for dev
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P ${MSSQL_SA_PASSWORD} -No -Q 'SELECT 1' > /dev/null 2>&1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
     deploy:
       resources:
         limits:
-          cpus: '2.0' # MSSQL needs more processing power
-          memory: 2.5G # Warning: MSSQL often terminates if given less than 2GB
+          cpus: '2.0'
+          memory: 2.5G
         reservations:
           memory: 2G
 
+  # ── MariaDB ──────────────────────────────────────────────────────────────────
   mariadb:
-    container_name: mariadb-dev    
+    container_name: mariadb-dev
     image: mariadb:10.11
-    user: "root"    
+    user: "999:999"
     environment:
-      MARIADB_ROOT_PASSWORD: jajnav5@
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
       MARIADB_DATABASE: devDb
-      MARIADB_USER: devuser
-      MARIADB_PASSWORD: JajNav5@2119
+      MARIADB_USER: ${MARIADB_USER}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD}
     ports:
       - "3306:3306"
     networks:
-      - backend_network    
-    restart: unless-stopped    
+      - backend_network
+    restart: unless-stopped
     volumes:
       - mariadb_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -72,41 +95,43 @@ services:
           cpus: '1.0'
           memory: 512M
 
+  # ── PostgreSQL ───────────────────────────────────────────────────────────────
   postgres:
     container_name: postgres-dev
     image: postgres:latest
+    # We start as root to fix cert ownership, then exec back to postgres user
+    # inside docker-entrypoint.sh — this is the standard pattern for cert setup
     user: "root"
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: jajnav5@
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: postgres
-      POSTGRES_PORT: 5432
-      POSTGRES_HOST: localhost
-      POSTGRES_SSLMODE: disable
-      POSTGRES_MAX_CONNECTIONS: 50 
     ports:
       - "5432:5432"
     networks:
       - backend_network
     restart: unless-stopped
-    volumes:      
-      - ./init:/docker-entrypoint-initdb.d
-      - postgres_data:/var/opt/postgresql/data
+    volumes:
+      - ./init:/docker-entrypoint-initdb.d     # init.sql runs here on first boot
+      - postgres_data:/var/lib/postgresql/data  # ✅ Correct data path
       - ./certs/server.crt:/tmp/server.crt:ro
       - ./certs/server.key:/tmp/server.key:ro
     entrypoint: >
       sh -c "
-      cp /tmp/server.crt /var/lib/postgresql/server.crt &&
-      cp /tmp/server.key /var/lib/postgresql/server.key &&
-      chown postgres:postgres /var/lib/postgresql/server.key &&
-      chmod 600 /var/lib/postgresql/server.key &&
-      exec docker-entrypoint.sh postgres 
-      -c ssl=on 
-      -c ssl_cert_file=/var/lib/postgresql/server.crt 
-      -c ssl_key_file=/var/lib/postgresql/server.key
+        cp /tmp/server.crt /var/lib/postgresql/server.crt &&
+        cp /tmp/server.key /var/lib/postgresql/server.key &&
+        chown postgres:postgres /var/lib/postgresql/server.crt
+                                /var/lib/postgresql/server.key &&
+        chmod 600 /var/lib/postgresql/server.key &&
+        exec docker-entrypoint.sh postgres
+          -c ssl=on
+          -c ssl_cert_file=/var/lib/postgresql/server.crt
+          -c ssl_key_file=/var/lib/postgresql/server.key
+          -c max_connections=50
+          -c log_connections=on
       "
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -116,6 +141,7 @@ services:
           cpus: '1.0'
           memory: 768M
 
+  # ── Keycloak ─────────────────────────────────────────────────────────────────
   keycloak:
     container_name: keycloak-dev
     image: quay.io/keycloak/keycloak:latest
@@ -123,12 +149,12 @@ services:
     environment:
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
-      KC_DB_USERNAME: keycloak_user
-      KC_DB_PASSWORD: jajnav5@
+      KC_DB_USERNAME: ${KEYCLOAK_DB_USER}
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
       KC_DB_SCHEMA: public
-      KC_BOOTSTRAP_ADMIN_USERNAME: admin
-      KC_BOOTSTRAP_ADMIN_PASSWORD: jajnav5@
-      KC_HOSTNAME: http://localhost:9000      
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KC_HOSTNAME: http://localhost:9000
       KC_HTTP_ENABLED: "true"
       KC_FEATURES: web-authn,token-exchange,client-policies,admin-fine-grained-authz,scripts,docker
       KC_HEALTH_ENABLED: "true"
@@ -141,83 +167,99 @@ services:
       - backend_network
     restart: unless-stopped
     volumes:
-      - keycloak_data:/var/opt/keycloak/data
+      - keycloak_data:/opt/keycloak/data   # ✅ Correct Keycloak data path
     depends_on:
       postgres:
         condition: service_healthy
-    command:
-      - start-dev
+    command: ["start-dev"]
     healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 && grep -q '200 OK' <&3"]
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '200 OK' <&3"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10   # Keycloak takes longer to boot; give it more attempts
+      start_period: 30s
     deploy:
       resources:
         limits:
           cpus: '1.5'
           memory: 1G
 
+  # ── PHPMyAdmin ───────────────────────────────────────────────────────────────
   phpmyadmin:
-    container_name: phpmyadmin_web
-    image: phpmyadmin/phpmyadmin:latest    
+    container_name: phpmyadmin-dev
+    image: phpmyadmin/phpmyadmin:latest
     user: "root"
-    restart: unless-stopped      
+    restart: unless-stopped
     environment:
-      PMA_HOST: mariadb      
+      PMA_HOST: mariadb
       PMA_PORT: 3306
+      PMA_USER: ${MARIADB_USER}
+      PMA_PASSWORD: ${MARIADB_PASSWORD}
     ports:
       - "9080:80"
     networks:
-      - backend_network    
+      - backend_network
     depends_on:
-      - mariadb
+      mariadb:
+        condition: service_healthy   # ✅ Wait for MariaDB to be truly ready
     deploy:
       resources:
         limits:
           cpus: '0.5'
           memory: 256M
 
+  # ── Redis ────────────────────────────────────────────────────────────────────
   redis:
     container_name: redis-dev
     image: redis:latest
-    user: "root"
-    environment:
-      REDIS_PASSWORD: jajnav5@
+    user: "999:999"
+    command: redis-server --requirepass ${REDIS_PASSWORD} --loglevel notice
     ports:
       - "6379:6379"
     networks:
       - backend_network
     restart: unless-stopped
     volumes:
-      - redis_data:/var/opt/redis/data
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     deploy:
       resources:
         limits:
           cpus: '1.0'
           memory: 512M
 
+  # ── RabbitMQ ─────────────────────────────────────────────────────────────────
   rabbitmq:
     container_name: rabbitmq-dev
     image: rabbitmq:3-management
-    user: "root"
+    user: "999:999"
     environment:
-      RABBITMQ_DEFAULT_USER: admin
-      RABBITMQ_DEFAULT_PASS: jajnav5@
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "5672:5672"    # AMQP protocol port
+      - "15672:15672"  # Management UI port
     networks:
       - backend_network
     restart: unless-stopped
     volumes:
-      - rabbitmq_data:/var/opt/rabbitmq/data
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
     deploy:
       resources:
         limits:
           cpus: '1.0'
           memory: 512M
 
+  # ── Zipkin ───────────────────────────────────────────────────────────────────
   zipkin:
     container_name: zipkin-dev
     image: openzipkin/zipkin:latest
@@ -226,32 +268,40 @@ services:
     networks:
       - backend_network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9411/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     deploy:
       resources:
         limits:
           cpus: '1.0'
           memory: 512M
 
+  # ── LocalStack ───────────────────────────────────────────────────────────────
   localstack:
-    container_name: localstack_main
+    container_name: localstack-dev
     image: localstack/localstack:latest
-    user: "root"    
+    # LocalStack genuinely needs elevated access for Lambda container management
+    user: "root"
     environment:
-      - ACTIVATE_PRO=0
-      - SERVICES=apigateway,s3,sqs,sns,stepfunctions,events,ec2,lambda,kms,iam,acm,transcribe,dynamodb,cloudformation,logs,cloudwatch,ssm,ses,kinesis,route53,opensearch
-      - LOCALSTACK_HOST=localstack
-      - DOCKER_HOST=unix:///var/run/docker.sock
-      - DEBUG=1
+      LOCALSTACK_AUTH_TOKEN: "ls-TeSI9190-QetI-diCa-HEju-seRu68163dfe"
+      ACTIVATE_PRO: "0"
+      SERVICES: apigateway,s3,sqs,sns,stepfunctions,events,ec2,lambda,kms,iam,acm,transcribe,dynamodb,cloudformation,logs,cloudwatch,ssm,ses,kinesis,route53,opensearch
+      LOCALSTACK_HOST: localstack
+      DOCKER_HOST: unix:///var/run/docker.sock
+      DEBUG: "0"   # Set to "1" only when actively debugging; it's very noisy
     ports:
       - "4566:4566"
     networks:
       - backend_network
     restart: unless-stopped
     volumes:
-      - "/var/run/docker.sock:/var/run/docker.sock"
-      - "./localstack-data:/var/lib/localstack"
+      - /var/run/docker.sock:/var/run/docker.sock
+      - localstack_data:/var/lib/localstack   # ✅ Named volume instead of bind mount
     healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/4566 && echo -e 'GET /_localstack/health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 && grep -q '200 OK' <&3"]
+      test: ["CMD-SHELL", "curl -f http://localhost:4566/_localstack/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -261,17 +311,20 @@ services:
           cpus: '2.0'
           memory: 2G
 
+# ── Networks ──────────────────────────────────────────────────────────────────
 networks:
-  frontend_network:
-    driver: bridge
   backend_network:
     driver: bridge
+    # Give the network an explicit name so it's predictable across projects
+    name: dev_backend
 
+# ── Volumes ───────────────────────────────────────────────────────────────────
 volumes:
-  keycloak_data:
   mongo_data:
   mssql_data:
   mariadb_data:
   postgres_data:
+  keycloak_data:
   redis_data:
   rabbitmq_data:
+  localstack_data:   # ✅ Named volume replaces the bind-mount ./localstack-data

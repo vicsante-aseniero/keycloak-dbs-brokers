@@ -1,5 +1,3 @@
-# Ignore all files in the 'certs' directory
+.env
 certs/
-
-# Ignore '.vscode' folder
-.vscode/
+localstack-data/
