@@ -5,14 +5,21 @@
 #   2. Run ./generate-certs.sh before first start
 #   3. Ensure ./init/init.sql exists
 
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
 
   # ── MongoDB ─────────────────────────────────────────────────────────────────
   mongodb:
     container_name: mongodb-dev
-    image: mongo:latest
+    image: mongo:8.3
     # mongo image uses UID 999 internally; running as non-root is safer
     user: "999:999"
+    profiles: [observability]
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
@@ -24,7 +31,11 @@ services:
     volumes:
       - mongo_data:/data/db
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD", "mongosh",
+            "--username", "${MONGO_USER}",
+            "--password", "${MONGO_PASSWORD}",
+            "--authenticationDatabase", "admin",
+            "--eval", "db.adminCommand('ping')"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -35,17 +46,25 @@ services:
           memory: 1G
         reservations:
           memory: 512M
+    logging: *default-logging
 
   # ── SQL Server ───────────────────────────────────────────────────────────────
   sqlserver:
     container_name: sqlserver-dev
     image: mcr.microsoft.com/mssql/server:2022-latest
+    hostname: sqlserver-dev
     # MSSQL requires root or its own internal user; leave as-is for dev
     user: "root"
+    profiles: [observability]
     environment:
       SA_PASSWORD: ${MSSQL_SA_PASSWORD}
       ACCEPT_EULA: "Y"
       MSSQL_PID: "Developer"
+      MSSQL_HOSTNAME: "sqlserver-dev"
+      MSSQL_USER: ${MSSQL_USER}
+      MSSQL_PASSWORD: ${MSSQL_PASSWORD}      
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
+      TZ: "Asia/Manila"
     ports:
       - "1433:1433"
     networks:
@@ -66,12 +85,14 @@ services:
           memory: 2.5G
         reservations:
           memory: 2G
+    logging: *default-logging
 
   # ── MariaDB ──────────────────────────────────────────────────────────────────
   mariadb:
     container_name: mariadb-dev
     image: mariadb:10.11
     user: "999:999"
+    profiles: [observability]
     environment:
       MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
       MARIADB_DATABASE: devDb
@@ -94,40 +115,45 @@ services:
         limits:
           cpus: '1.0'
           memory: 512M
+    logging: *default-logging
 
   # ── PostgreSQL ───────────────────────────────────────────────────────────────
   postgres:
     container_name: postgres-dev
-    image: postgres:latest
+    image: postgres:17.5
     # We start as root to fix cert ownership, then exec back to postgres user
     # inside docker-entrypoint.sh — this is the standard pattern for cert setup
     user: "root"
     environment:
+      KEYCLOAK_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: postgres
+      PGDATA: /var/lib/postgresql/data/pgdata
     ports:
       - "5432:5432"
     networks:
       - backend_network
     restart: unless-stopped
     volumes:
-      - ./init:/docker-entrypoint-initdb.d     # init.sql runs here on first boot
-      - postgres_data:/var/lib/postgresql/data  # ✅ Correct data path
+      - postgres_data:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d
       - ./certs/server.crt:/tmp/server.crt:ro
       - ./certs/server.key:/tmp/server.key:ro
-    entrypoint: >
+    entrypoint: |
       sh -c "
-        cp /tmp/server.crt /var/lib/postgresql/server.crt &&
-        cp /tmp/server.key /var/lib/postgresql/server.key &&
-        chown postgres:postgres /var/lib/postgresql/server.crt
-                                /var/lib/postgresql/server.key &&
-        chmod 600 /var/lib/postgresql/server.key &&
-        exec docker-entrypoint.sh postgres
-          -c ssl=on
-          -c ssl_cert_file=/var/lib/postgresql/server.crt
-          -c ssl_key_file=/var/lib/postgresql/server.key
-          -c max_connections=50
+        # Copy certs to a path we own completely — avoids volume permission issues
+        mkdir -p /var/lib/postgresql/certs &&
+        cp /tmp/server.crt /var/lib/postgresql/certs/server.crt &&
+        cp /tmp/server.key /var/lib/postgresql/certs/server.key &&
+        chown -R postgres:postgres /var/lib/postgresql/certs &&
+        chmod 600 /var/lib/postgresql/certs/server.key &&
+        chmod 644 /var/lib/postgresql/certs/server.crt &&
+        exec docker-entrypoint.sh postgres \
+          -c ssl=on \
+          -c ssl_cert_file=/var/lib/postgresql/certs/server.crt \
+          -c ssl_key_file=/var/lib/postgresql/certs/server.key \
+          -c max_connections=50 \
           -c log_connections=on
       "
     healthcheck:
@@ -140,12 +166,14 @@ services:
         limits:
           cpus: '1.0'
           memory: 768M
+    logging: *default-logging
 
   # ── Keycloak ─────────────────────────────────────────────────────────────────
   keycloak:
     container_name: keycloak-dev
-    image: quay.io/keycloak/keycloak:latest
-    user: "root"
+    image: quay.io/keycloak/keycloak:26.2
+    user: "999:999"
+    profiles: [observability]
     environment:
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
@@ -160,7 +188,7 @@ services:
       KC_HEALTH_ENABLED: "true"
       KC_METRICS_ENABLED: "true"
       KC_PROXY: none
-      JAVA_OPTS: "-Xms512m -Xmx768m -XX:MetaspaceSize=96M -XX:MaxMetaspaceSize=256m"
+      KC_JAVA_OPTS: "-Xms512m -Xmx768m -XX:MetaspaceSize=96M -XX:MaxMetaspaceSize=256m"
     ports:
       - "9000:8080"
     networks:
@@ -173,7 +201,7 @@ services:
         condition: service_healthy
     command: ["start-dev"]
     healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '200 OK' <&3"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health/ready"]
       interval: 10s
       timeout: 5s
       retries: 10   # Keycloak takes longer to boot; give it more attempts
@@ -183,12 +211,13 @@ services:
         limits:
           cpus: '1.5'
           memory: 1G
+    logging: *default-logging
 
   # ── PHPMyAdmin ───────────────────────────────────────────────────────────────
   phpmyadmin:
     container_name: phpmyadmin-dev
     image: phpmyadmin/phpmyadmin:latest
-    user: "root"
+    profiles: [observability]
     restart: unless-stopped
     environment:
       PMA_HOST: mariadb
@@ -207,12 +236,14 @@ services:
         limits:
           cpus: '0.5'
           memory: 256M
+    logging: *default-logging
 
   # ── Redis ────────────────────────────────────────────────────────────────────
   redis:
     container_name: redis-dev
-    image: redis:latest
+    image: redis:8.0
     user: "999:999"
+    profiles: [observability]
     command: redis-server --requirepass ${REDIS_PASSWORD} --loglevel notice
     ports:
       - "6379:6379"
@@ -231,15 +262,18 @@ services:
         limits:
           cpus: '1.0'
           memory: 512M
+    logging: *default-logging
 
   # ── RabbitMQ ─────────────────────────────────────────────────────────────────
   rabbitmq:
     container_name: rabbitmq-dev
-    image: rabbitmq:3-management
+    image: rabbitmq:3.13-management
     user: "999:999"
+    profiles: [observability]
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "-rabbit vm_memory_high_watermark 0.8"
     ports:
       - "5672:5672"    # AMQP protocol port
       - "15672:15672"  # Management UI port
@@ -248,21 +282,28 @@ services:
     restart: unless-stopped
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/conf.d/20-custom.conf:ro
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
       interval: 10s
       timeout: 10s
       retries: 5
+      start_period: 30s  # give it breathing room on first boot
     deploy:
       resources:
         limits:
           cpus: '1.0'
           memory: 512M
+    logging: *default-logging
 
   # ── Zipkin ───────────────────────────────────────────────────────────────────
   zipkin:
     container_name: zipkin-dev
     image: openzipkin/zipkin:latest
+    user: "1000:1000"
+    profiles: [observability]
+    environment:
+      JAVA_OPTS: "--enable-native-access=ALL-UNNAMED"
     ports:
       - "9411:9411"
     networks:
@@ -278,20 +319,22 @@ services:
         limits:
           cpus: '1.0'
           memory: 512M
+    logging: *default-logging
 
   # ── LocalStack ───────────────────────────────────────────────────────────────
   localstack:
     container_name: localstack-dev
-    image: localstack/localstack:latest
+    image: localstack/localstack:4.14
     # LocalStack genuinely needs elevated access for Lambda container management
     user: "root"
+    profiles: [observability]
     environment:
-      LOCALSTACK_AUTH_TOKEN: "ls-TeSI9190-QetI-diCa-HEju-seRu68163dfe"
-      ACTIVATE_PRO: "0"
+      LOCALSTACK_AUTH_TOKEN: ${LOCALSTACK_AUTH_TOKEN}
       SERVICES: apigateway,s3,sqs,sns,stepfunctions,events,ec2,lambda,kms,iam,acm,transcribe,dynamodb,cloudformation,logs,cloudwatch,ssm,ses,kinesis,route53,opensearch
       LOCALSTACK_HOST: localstack
       DOCKER_HOST: unix:///var/run/docker.sock
       DEBUG: "0"   # Set to "1" only when actively debugging; it's very noisy
+      SSL_CERT_ENDPOINT: ""
     ports:
       - "4566:4566"
     networks:
@@ -310,6 +353,7 @@ services:
         limits:
           cpus: '2.0'
           memory: 2G
+    logging: *default-logging
 
 # ── Networks ──────────────────────────────────────────────────────────────────
 networks:
