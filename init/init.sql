@@ -1,65 +1,52 @@
 -- init.sql
 -- Bootstraps PostgreSQL for Keycloak.
--- This file runs automatically on first container start via
--- /docker-entrypoint-initdb.d/ — it does NOT re-run if the data volume exists.
---
--- Requires PostgreSQL 14+ for \getenv support.
--- Requires the KEYCLOAK_DB_PASSWORD environment variable to be set.
+-- Runs once on first container start via /docker-entrypoint-initdb.d/
+-- REQUIRES: KEYCLOAK_DB_PASSWORD env var to be set.
+-- NOTE: Keycloak creates its own tables via Liquibase on first boot.
+--       This script only sets up the user, database, and permissions.
 
 -- ── Step 0: Read password from environment ───────────────────────────────────
--- \getenv reads directly from the process environment — more reliable than
--- \set with backtick shell expansion, which does not work consistently inside
--- docker-entrypoint-initdb.d scripts.
 \getenv kc_pass KEYCLOAK_DB_PASSWORD
 
--- Guard against a missing or empty password variable.
--- This causes the script to fail loudly rather than create a user
--- with a blank password, which would be a silent security failure.
 \if :{?kc_pass}
 \else
-    \warn 'FATAL: KEYCLOAK_DB_PASSWORD is not set in the environment. Aborting init.sql.'
+    \warn 'FATAL: KEYCLOAK_DB_PASSWORD is not set. Aborting.'
     \quit
 \endif
 
--- ── Step 1: Create the Keycloak user ─────────────────────────────────────────
--- NOSUPERUSER NOCREATEDB NOCREATEROLE follows the principle of least privilege.
--- The password is sourced from the environment variable above, not hardcoded.
+-- ── Step 1: Create the Keycloak database user ────────────────────────────────
+-- RECOMMENDATION: The username here MUST match KC_DB_USERNAME in docker-compose.yml.
+-- If KC_DB_USERNAME=keycloak_user in your .env, this is correct.
+-- Least-privilege: no superuser, no createdb, no createrole.
 CREATE USER keycloak_user WITH PASSWORD :'kc_pass'
     NOSUPERUSER
     NOCREATEDB
-    NOCREATEROLE;
+    NOCREATEROLE
+    LOGIN;  -- explicit LOGIN is good documentation practice
 
--- ── Step 2: Create a dedicated role with minimal privileges ──────────────────
-CREATE ROLE keycloak_admin;
-
--- Grant the user membership in the role (not superuser elevation).
-GRANT keycloak_admin TO keycloak_user;
-
--- ── Step 3: Create the Keycloak database ─────────────────────────────────────
--- C.UTF-8 is used instead of en_US.UTF-8 for portability across images.
--- en_US.UTF-8 requires the locale to be installed on the OS; C.UTF-8 is
--- always available and still fully supports Unicode data storage.
-CREATE DATABASE keycloak OWNER keycloak_user
+-- ── Step 2: Create the Keycloak database ─────────────────────────────────────
+-- C.UTF-8 is portable (no OS locale dependency) and fully supports Unicode.
+CREATE DATABASE keycloak
+    OWNER keycloak_user          -- user owns the DB; no extra grants needed
     ENCODING 'UTF8'
     LC_COLLATE 'C.UTF-8'
     LC_CTYPE 'C.UTF-8'
     TEMPLATE template0;
 
--- Grant connection rights explicitly.
+-- ── Step 3: Grant connection privilege (belt-and-suspenders) ─────────────────
+-- OWNER already has CONNECT, but being explicit prevents surprises if ownership
+-- is ever changed.
 GRANT CONNECT ON DATABASE keycloak TO keycloak_user;
 
--- ── Step 4: Switch to the keycloak database and set up schema permissions ────
--- \c switches the psql connection context — all grants below now apply
--- to objects inside the keycloak database, not the default postgres database.
+-- ── Step 4: Schema permissions inside the keycloak database ──────────────────
 \c keycloak
 
--- Allow keycloak_user to use the public schema and create objects within it.
+-- Allow keycloak_user to use and create objects in public schema.
+-- Keycloak's Liquibase migrations require CREATE to build tables/indexes.
 GRANT USAGE, CREATE ON SCHEMA public TO keycloak_user;
 
--- Ensure future tables and sequences created by Keycloak are also accessible.
--- ALTER DEFAULT PRIVILEGES applies to objects created AFTER this statement runs.
-ALTER DEFAULT PRIVILEGES IN SCHEMA public
-    GRANT ALL PRIVILEGES ON TABLES TO keycloak_user;
-
-ALTER DEFAULT PRIVILEGES IN SCHEMA public
-    GRANT ALL PRIVILEGES ON SEQUENCES TO keycloak_user;
+-- ── NOTE on keycloak_admin role ───────────────────────────────────────────────
+-- The original script created a keycloak_admin role but granted it no
+-- privileges, making it a no-op. Removed to reduce confusion.
+-- If you want a read-only admin role for inspection/reporting, add it here
+-- with explicit SELECT grants after Keycloak has created its tables.

@@ -17,8 +17,6 @@ services:
   mongodb:
     container_name: mongodb-dev
     image: mongo:8.3
-    # mongo image uses UID 999 internally; running as non-root is safer
-    user: "999:999"
     profiles: [databases]
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER}
@@ -43,9 +41,9 @@ services:
       resources:
         limits:
           cpus: '1.0'
-          memory: 1G
+          memory: 1.5G
         reservations:
-          memory: 512M
+          memory: 1G
     logging: *default-logging
 
   # ── SQL Server ───────────────────────────────────────────────────────────────
@@ -172,8 +170,9 @@ services:
   # ── Keycloak ─────────────────────────────────────────────────────────────────
   keycloak:
     container_name: keycloak-dev
-    image: quay.io/keycloak/keycloak:26.2
-    user: "999:999"
+    build:
+      context: .
+      dockerfile: Keycloak.Dockerfile
     profiles: [auth-brokers]
     environment:
       KC_DB: postgres
@@ -211,7 +210,7 @@ services:
       resources:
         limits:
           cpus: '1.5'
-          memory: 1G
+          memory: 1.5G
     logging: *default-logging
 
   # ── PHPMyAdmin ───────────────────────────────────────────────────────────────
@@ -225,6 +224,7 @@ services:
       PMA_PORT: 3306
       PMA_USER: ${MARIADB_USER}
       PMA_PASSWORD: ${MARIADB_PASSWORD}
+      APACHE_SERVER_NAME: phpmyadmin
     ports:
       - "9080:80"
     networks:
@@ -243,7 +243,6 @@ services:
   redis:
     container_name: redis-dev
     image: redis:8.0
-    user: "999:999"
     profiles: [message-brokers]
     command: redis-server --requirepass ${REDIS_PASSWORD} --loglevel notice
     ports:
@@ -269,7 +268,6 @@ services:
   rabbitmq:
     container_name: rabbitmq-dev
     image: rabbitmq:3.13-management
-    user: "999:999"
     profiles: [message-brokers]
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
